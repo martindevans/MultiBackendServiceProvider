@@ -86,9 +86,13 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
             // Backend is alive!
             live.Add(backend);
 
-            // Backend has capacity, use this one
+            // Backend has capacity, try to use this one
             if (backend.AvailableSlots > 0)
-                return await CreateScope(backend, TimeSpan.FromSeconds(0.1f), cancellation);
+            {
+                var scope = await CreateScope(backend, TimeSpan.FromSeconds(0.1f), cancellation);
+                if (scope != null)
+                    return scope;
+            }
         }
 
         // Immediately fail if every backend failed the health check
