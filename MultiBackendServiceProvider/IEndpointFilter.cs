@@ -36,7 +36,7 @@ public class DenyFilter<TService>
     /// <inheritdoc />
     public ValueTask<bool> FilterEndpoint(TService endpoint, IReadOnlyList<string> filters)
     {
-        return new ValueTask<bool>(true);
+        return new ValueTask<bool>(false);
     }
 }
 
