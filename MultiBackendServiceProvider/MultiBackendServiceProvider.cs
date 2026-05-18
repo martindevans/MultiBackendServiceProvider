@@ -252,7 +252,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
         : IScope
     {
         private readonly Backend _backend;
-        private bool _released;
+        private int _released;
 
         /// <summary>
         /// Get the endpoint associated with this scope
@@ -266,7 +266,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
         public Scope(Backend backend)
         {
             _backend = backend;
-            _released = false;
+            _released = 0;
         }
 
         ~Scope()
@@ -283,9 +283,8 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
 
         private void Release()
         {
-            if (!_released)
+            if (Interlocked.Exchange(ref _released, 1) == 0)
                 _backend.Release();
-            _released = true;
         }
     }
 
