@@ -1,0 +1,7 @@
+.vs
+
+MultiBackendServiceProvider/obj
+MultiBackendServiceProvider/bin
+
+MultiBackendServiceProvider.Tests/obj
+MultiBackendServiceProvider.Tests/bin

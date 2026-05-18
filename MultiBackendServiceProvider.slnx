@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MultiBackendServiceProvider.Tests/MultiBackendServiceProvider.Tests.csproj" />
+  <Project Path="MultiBackendServiceProvider/MultiBackendServiceProvider.csproj" />
+</Solution>
