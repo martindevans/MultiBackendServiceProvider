@@ -1,4 +1,5 @@
-﻿using System.Net;
+using System.Net;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MultiBackendServiceProvider.Tests;
@@ -26,6 +27,22 @@ public sealed class Test1
         Assert.AreEqual(1, status[0].MaxSlots);
     }
 
+    [TestMethod]
+    public async Task CustomHealthChecker_IsUsedPerBackend()
+    {
+        var provider = new MultiBackendServiceProvider<string>(
+            new StubHttpClientFactory(new AlwaysHealthyHandler()),
+            NullLogger.Instance,
+            new AcceptFilter<string>(),
+            new MultiBackendServiceProvider<string>.EndpointConfig("a", 1, new FixedHealthChecker(false)),
+            new MultiBackendServiceProvider<string>.EndpointConfig("b", 1, new FixedHealthChecker(true)));
+
+        using var scope = await provider.GetEndpoint(CancellationToken.None);
+
+        Assert.IsNotNull(scope);
+        Assert.AreEqual("b", scope.Endpoint);
+    }
+
     private sealed class StubHttpClientFactory(HttpMessageHandler handler)
         : IHttpClientFactory
     {
@@ -41,6 +58,15 @@ public sealed class Test1
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class FixedHealthChecker(bool healthy)
+        : MultiBackendServiceProvider<string>.IHealthChecker
+    {
+        public Task<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
+        {
+            return Task.FromResult(healthy);
         }
     }
 }
