@@ -149,7 +149,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
     private class Backend
     {
         private readonly SemaphoreSlim _semaphore;
-        private readonly IHealthChecker _healthChecker;
+        private readonly IEndpointHealthChecker _healthChecker;
 
         /// <summary>
         /// Get the backend object
@@ -172,7 +172,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
         /// <param name="endpoint"></param>
         /// <param name="concurrentAccess"></param>
         /// <param name="healthChecker"></param>
-        public Backend(TEndpoint endpoint, int concurrentAccess, IHealthChecker healthChecker)
+        public Backend(TEndpoint endpoint, int concurrentAccess, IEndpointHealthChecker healthChecker)
         {
             _semaphore = new(concurrentAccess);
 
@@ -200,61 +200,39 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
             _semaphore.Release();
         }
 
-        public async Task<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
+        public async Task<bool> CheckHealth(HttpClient http, ILogger logger, CancellationToken cancellation)
         {
-            return await _healthChecker.CheckHealth(client, logger, cancellation);
-        }
-    }
-
-    /// <summary>
-    /// Pluggable health-check implementation for an endpoint backend.
-    /// </summary>
-    public interface IHealthChecker
-    {
-        /// <summary>
-        /// Check backend health and return true when backend should be considered available.
-        /// </summary>
-        /// <param name="client">Reusable HTTP client configured by provider.</param>
-        /// <param name="logger"></param>
-        /// <param name="cancellation"></param>
-        /// <returns></returns>
-        Task<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation);
-    }
-
-    /// <summary>
-    /// Default health checker that performs an HTTP GET against a configured URL.
-    /// </summary>
-    /// <param name="healthCheck"></param>
-    public sealed class HttpHealthChecker(Uri healthCheck)
-        : IHealthChecker
-    {
-        public async Task<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
-        {
-            try
-            {
-                var result = await client.GetAsync(healthCheck, cancellation);
-                return result.IsSuccessStatusCode;
-            }
-            catch (TaskCanceledException)
-            {
-                return false;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Health check exception");
-                return false;
-            }
+            return await _healthChecker.CheckHealth(http, logger, cancellation);
         }
     }
 
     /// <summary>
     /// Configuration for an endpoint
     /// </summary>
-    /// <param name="Endpoint"></param>
-    /// <param name="Slots"></param>
-    /// <param name="HealthChecker"></param>
-    public sealed record EndpointConfig(TEndpoint Endpoint, int Slots, IHealthChecker HealthChecker)
+    public sealed record EndpointConfig
     {
+        /// <summary>
+        /// Gets the endpoint associated with this configuration.
+        /// </summary>
+        public TEndpoint Endpoint { get; init; }
+
+        /// <summary>
+        /// Gets the maximum number of concurrent accesses allowed for the endpoint.
+        /// </summary>
+        /// <remarks>
+        /// This property defines the total number of "slots" available for concurrent usage of the endpoint.
+        /// It is used to limit the number of simultaneous operations that can be performed on the endpoint.
+        /// </remarks>
+        public int Slots { get; init; }
+
+        /// <summary>
+        /// Gets the health checker instance responsible for monitoring the health of the endpoint.
+        /// </summary>
+        /// <value>
+        /// An implementation of <see cref="IEndpointHealthChecker"/> used to determine the availability of the endpoint.
+        /// </value>
+        public IEndpointHealthChecker HealthChecker { get; init; }
+
         /// <summary>
         /// Create endpoint config using default HTTP health checker.
         /// </summary>
@@ -264,6 +242,19 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
         public EndpointConfig(TEndpoint Endpoint, int Slots, Uri HealthCheck)
             : this(Endpoint, Slots, new HttpHealthChecker(HealthCheck))
         {
+        }
+
+        /// <summary>
+        /// Configuration for an endpoint
+        /// </summary>
+        /// <param name="endpoint"></param>
+        /// <param name="slots"></param>
+        /// <param name="healthChecker"></param>
+        public EndpointConfig(TEndpoint endpoint, int slots, IEndpointHealthChecker healthChecker)
+        {
+            Endpoint = endpoint;
+            Slots = slots;
+            HealthChecker = healthChecker;
         }
     }
 
@@ -327,7 +318,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
     /// </summary>
     /// <returns></returns>
     /// <exception cref="NotImplementedException"></exception>
-    public async Task<Status[]> GetStatus()
+    public async Task<Status[]> GetStatus(CancellationToken cancellation)
     {
         var pending = _backends.Select(async backend =>
         {
@@ -336,7 +327,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
             bool result;
             try
             {
-                result = await backend.CheckHealth(_healthCheckClient, _logger, default);
+                result = await backend.CheckHealth(_healthCheckClient, _logger, cancellation);
             }
             catch (Exception ex)
             {

@@ -1,7 +1,8 @@
 ﻿namespace MultiBackendServiceProvider;
 
 /// <summary>
-/// Filters endpoints based on string tags
+/// Filters endpoints based on string tags. Strings could be a list of capabilities being requested, it's up to the filter
+/// to determine how to interpret the string and if the given endpoint is suitable for them.
 /// </summary>
 public interface IEndpointFilter<in TEndpoint>
 {
