@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageId>MultiBackendServiceProvider</PackageId>
+    <Version>1.0.0</Version>
     <Authors>Martin Evans</Authors>
     <RepositoryUrl>https://github.com/martindevans/MultiBackendServiceProvider</RepositoryUrl>
   </PropertyGroup>
