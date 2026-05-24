@@ -67,6 +67,9 @@ public class LoadFactorSelector<TBackend>
         {
             cancellation.ThrowIfCancellationRequested();
 
+            if (backend.TotalSlots <= 0)
+                continue;
+
             var loadFactor = 1 - (float)backend.AvailableSlots / backend.TotalSlots;
             if (loadFactor < lowestLoadFactor)
             {
