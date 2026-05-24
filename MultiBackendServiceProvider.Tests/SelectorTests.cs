@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
-
 namespace MultiBackendServiceProvider.Tests;
 
 [TestClass]
@@ -71,19 +69,14 @@ public class SelectorTests
     [TestMethod]
     public async Task LoadFactorSelector_SelectsBackendWithLowestLoadFactor()
     {
-        var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
-            NullLogger.Instance,
-            new BackendNameFilter(),
-            new LoadFactorSelector<string>(),
-            new MultiBackendServiceProvider<string>.BackendConfig("heavy", 4, new FixedHealthChecker(true)),
-            new MultiBackendServiceProvider<string>.BackendConfig("light", 4, new FixedHealthChecker(true)));
-
-        using var heavy1 = await provider.GetBackend(["heavy"], CancellationToken.None);
-        using var heavy2 = await provider.GetBackend(["heavy"], CancellationToken.None);
-        using var heavy3 = await provider.GetBackend(["heavy"], CancellationToken.None);
-        using var light1 = await provider.GetBackend(["light"], CancellationToken.None);
-        using var result = await provider.GetBackend(CancellationToken.None);
+        var heavilyLoaded = new BackendState<string>("heavy", 4, new FixedHealthChecker(true));
+        var lightlyLoaded = new BackendState<string>("light", 4, new FixedHealthChecker(true));
+        using var heavy1 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
+        using var heavy2 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
+        using var heavy3 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
+        using var light1 = await lightlyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
+        var selector = new LoadFactorSelector<string>();
+        var result = await selector.Select([heavilyLoaded, lightlyLoaded], CancellationToken.None);
 
         Assert.IsNotNull(heavy1);
         Assert.IsNotNull(heavy2);
@@ -96,26 +89,12 @@ public class SelectorTests
     [TestMethod]
     public async Task LoadFactorSelector_IgnoresBackendsWithoutCapacity()
     {
-        var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
-            NullLogger.Instance,
-            new BackendNameFilter(),
-            new LoadFactorSelector<string>(),
-            new MultiBackendServiceProvider<string>.BackendConfig("unavailable", 0, new FixedHealthChecker(true)),
-            new MultiBackendServiceProvider<string>.BackendConfig("available", 1, new FixedHealthChecker(true)));
-
-        using var result = await provider.GetBackend(CancellationToken.None);
+        var unavailable = new BackendState<string>("unavailable", 0, new FixedHealthChecker(true));
+        var available = new BackendState<string>("available", 1, new FixedHealthChecker(true));
+        var selector = new LoadFactorSelector<string>();
+        var result = await selector.Select([unavailable, available], CancellationToken.None);
 
         Assert.IsNotNull(result);
         Assert.AreEqual("available", result.Backend);
-    }
-
-    private sealed class BackendNameFilter
-        : IBackendFilter<string>
-    {
-        public ValueTask<bool> Filter(string backend, IReadOnlyCollection<string> tags)
-        {
-            return ValueTask.FromResult(tags.Count == 0 || tags.Contains(backend));
-        }
     }
 }
