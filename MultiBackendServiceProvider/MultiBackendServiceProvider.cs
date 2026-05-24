@@ -71,7 +71,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
             // Try to select a backend from this set
             while (backends.Count > 0)
             {
-                // Choose one, if not are selected give up entirely
+                // Choose one; if none are selected, give up entirely
                 var result = await _selector.Select(backends, cancellation);
                 if (result == null)
                     return null;
