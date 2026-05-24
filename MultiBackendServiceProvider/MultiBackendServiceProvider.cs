@@ -54,6 +54,9 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <returns></returns>
     public async Task<IScope?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
+        if (_backends.Count == 0)
+            return null;
+        
         // Try to acquire a slot
         while (!cancellation.IsCancellationRequested)
         {
@@ -61,12 +64,16 @@ public sealed class MultiBackendServiceProvider<TBackend>
             var backends = await GetHealthyBackends(cancellation);
             await FilterHealthyBackends(backends, _filter, tags, cancellation);
 
+            // If none are available give up
+            if (backends.Count == 0)
+                return null;
+            
             // Choose one
             var result = await _selector.Select(backends, cancellation);
             if (result == null)
-                continue;
+                return null;
 
-            // Check that it's still healthy
+            // Check that it's still healthy, if not retry the whole thing
             var health = await result.CheckHealth(_healthCheckClient, _logger, cancellation);
             if (!health)
                 continue;
