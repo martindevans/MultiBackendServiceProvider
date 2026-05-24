@@ -59,7 +59,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         {
             // Get valid backends (healthy + filtered)
             var backends = await GetHealthyBackends(cancellation);
-            await FilterHealthyBackends(backends, tags, cancellation);
+            await FilterHealthyBackends(backends, _filter, tags, cancellation);
 
             // Choose one
             var result = await _selector.Select(backends, cancellation);
@@ -116,16 +116,17 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// Filter out backends based on tags
     /// </summary>
     /// <param name="backends"></param>
+    /// <param name="filter"></param>
     /// <param name="tags"></param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    private async Task FilterHealthyBackends(List<BackendState<TBackend>> backends, IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    private static async Task FilterHealthyBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
         // Start a simultaneous filter check on every backend
         var pending = (
-            from backend in _backends
+            from backend in backends
 #pragma warning disable CA2012 // It's ok to store a ValueTask here, we're only going to await it once
-            let task = _filter.Filter(backend.Backend, tags)
+            let task = filter.Filter(backend.Backend, tags)
 #pragma warning restore CA2012
             select task
         ).ToList();
