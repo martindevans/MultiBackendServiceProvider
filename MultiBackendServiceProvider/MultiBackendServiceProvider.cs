@@ -41,7 +41,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// </summary>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public Task<IScope?> GetBackend(CancellationToken cancellation)
+    public Task<BackendState<TBackend>.IScope?> GetBackend(CancellationToken cancellation)
     {
         return GetBackend([], cancellation);
     }
@@ -52,7 +52,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="tags">Strings that will be passed into backend filters</param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public async Task<IScope?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    public async Task<BackendState<TBackend>.IScope?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
         if (_backends.Count == 0)
             return null;
@@ -85,7 +85,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
                 }
 
                 // Try to acquire a slot
-                var scope = await Scope.Acquire(result, TimeSpan.FromSeconds(0.1f), cancellation);
+                var scope = await result.Acquire(TimeSpan.FromSeconds(0.1f), cancellation);
                 if (scope != null)
                     return scope;
                 
@@ -214,72 +214,6 @@ public sealed class MultiBackendServiceProvider<TBackend>
             HealthChecker = healthChecker;
         }
     }
-
-    #region scope
-    /// <summary>
-    /// A scope of backend usage, while this is held a slot is consumed on the backend
-    /// </summary>
-    public interface IScope
-        : IDisposable
-    {
-        /// <summary>
-        /// Get the backend associated with this scope
-        /// </summary>
-        public TBackend Backend { get; }
-    }
-
-    /// <summary>
-    /// A scope of backend usage, while this is held a slot is consumed on the backend
-    /// </summary>
-    private sealed class Scope
-        : IScope
-    {
-        private readonly BackendState<TBackend> _backend;
-        private int _released;
-
-        /// <summary>
-        /// Get the backend associated with this scope
-        /// </summary>
-        public TBackend Backend => _backend.Backend;
-
-        /// <summary>
-        /// Create a new scope. <b>Must acquire a semaphore slot **before** calling this!</b>
-        /// </summary>
-        /// <param name="backend"></param>
-        private Scope(BackendState<TBackend> backend)
-        {
-            _backend = backend;
-            _released = 0;
-        }
-
-        public static async ValueTask<Scope?> Acquire(BackendState<TBackend> backend, TimeSpan timeout, CancellationToken cancellation)
-        {
-            var acquired = await backend.Wait(timeout, cancellation);
-            if (!acquired)
-                return null;
-
-            return new Scope(backend);
-        }
-
-        ~Scope()
-        {
-            Release();
-        }
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            Release();
-            GC.SuppressFinalize(this);
-        }
-
-        private void Release()
-        {
-            if (Interlocked.Exchange(ref _released, 1) == 0)
-                _backend.Release();
-        }
-    }
-    #endregion
 
     #region status
     /// <summary>
