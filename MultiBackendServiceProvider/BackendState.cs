@@ -38,20 +38,24 @@ public sealed class BackendState<TBackend>
     }
 
     /// <summary>
-    /// Wait for this backend to become available, acquires a slot if it returns true.
+    /// Wait to acquire a slot from this backend
     /// </summary>
     /// <param name="timeout"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    internal Task<bool> Wait(TimeSpan timeout, CancellationToken cancellationToken)
+    public async Task<IScope?> Acquire(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        return _semaphore.WaitAsync(timeout, cancellationToken);
+        var acquired = await _semaphore.WaitAsync(timeout, cancellationToken);
+        if (!acquired)
+            return null;
+
+        return new Scope(this);
     }
 
     /// <summary>
     /// Release a slot to this backend
     /// </summary>
-    internal void Release()
+    private void Release()
     {
         _semaphore.Release();
     }
@@ -60,4 +64,61 @@ public sealed class BackendState<TBackend>
     {
         return _healthChecker.CheckHealth(http, logger, cancellation).AsTask();
     }
+
+    #region scope
+    /// <summary>
+    /// A scope of backend usage, while this is held a slot is consumed on the backend
+    /// </summary>
+    public interface IScope
+        : IDisposable
+    {
+        /// <summary>
+        /// Get the backend associated with this scope
+        /// </summary>
+        public TBackend Backend { get; }
+    }
+
+    /// <summary>
+    /// A scope of backend usage, while this is held a slot is consumed on the backend
+    /// </summary>
+    private sealed class Scope
+        : IScope
+    {
+        private readonly BackendState<TBackend> _backend;
+        private int _released;
+
+        /// <summary>
+        /// Get the backend associated with this scope
+        /// </summary>
+        public TBackend Backend => _backend.Backend;
+
+        /// <summary>
+        /// Create a new scope. <b>Must acquire a semaphore slot **before** calling this!</b>
+        /// </summary>
+        /// <param name="backend"></param>
+        internal Scope(BackendState<TBackend> backend)
+        {
+            _backend = backend;
+            _released = 0;
+        }
+
+        ~Scope()
+        {
+            Release();
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            Release();
+            GC.SuppressFinalize(this);
+        }
+
+        private void Release()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0)
+                _backend.Release();
+        }
+    }
+    #endregion
 }
