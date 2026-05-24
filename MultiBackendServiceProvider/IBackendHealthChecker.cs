@@ -3,9 +3,9 @@
 namespace MultiBackendServiceProvider;
 
 /// <summary>
-/// Pluggable health-check implementation for an endpoint backend.
+/// Pluggable health-check implementation for a backend.
 /// </summary>
-public interface IEndpointHealthChecker
+public interface IBackendHealthChecker
 {
     /// <summary>
     /// Check backend health and return true when backend should be considered available.
@@ -18,16 +18,16 @@ public interface IEndpointHealthChecker
 }
 
 /// <summary>
-/// Default health checker that performs an HTTP GET against a configured URL. Endpoint is considered healthy if the
+/// Default health checker that performs an HTTP GET against a configured URL. Backend is considered healthy if the
 /// request returns a success (200-299) status code.
 /// </summary>
 public sealed class HttpHealthChecker
-    : IEndpointHealthChecker
+    : IBackendHealthChecker
 {
     private readonly Uri _healthCheck;
 
     /// <summary>
-    /// Default health checker that performs an HTTP GET against a configured URL. Endpoint is considered healthy if the
+    /// Default health checker that performs an HTTP GET against a configured URL. Backend is considered healthy if the
     /// request returns a success (200-299) status code.
     /// </summary>
     /// <param name="healthCheck"></param>

@@ -12,9 +12,10 @@ public class ScopeTests
             new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
-            new MultiBackendServiceProvider<string>.EndpointConfig("a", 1, new Uri("http://health.local/")));
+            new FirstSelector<string>(),
+            new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new Uri("http://health.local/")));
 
-        var scope = await provider.GetEndpoint(CancellationToken.None);
+        var scope = await provider.GetBackend(CancellationToken.None);
         Assert.IsNotNull(scope);
 
         var tasks = Enumerable.Range(0, 128).Select(_ => Task.Run(scope.Dispose, TestContext.CancellationToken));
@@ -25,5 +26,5 @@ public class ScopeTests
         Assert.AreEqual(1, status[0].MaxSlots);
     }
 
-    public TestContext TestContext { get; set; }
+    public TestContext TestContext { get; set; } = null!;
 }

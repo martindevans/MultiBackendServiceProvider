@@ -12,14 +12,14 @@ public class FilterTests
     public async Task AcceptFilter_ReturnsTrue_WhenNoFilters()
     {
         var filter = new AcceptFilter<string>();
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task AcceptFilter_ReturnsTrue_WhenFiltersProvided()
     {
         var filter = new AcceptFilter<string>();
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", SomeFilters));
+        Assert.IsTrue(await filter.Filter("backend", SomeFilters));
     }
 
     // DenyFilter
@@ -28,14 +28,14 @@ public class FilterTests
     public async Task DenyFilter_ReturnsFalse_WhenNoFilters()
     {
         var filter = new DenyFilter<string>();
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task DenyFilter_ReturnsFalse_WhenFiltersProvided()
     {
         var filter = new DenyFilter<string>();
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", SomeFilters));
+        Assert.IsFalse(await filter.Filter("backend", SomeFilters));
     }
 
     // AndFilter
@@ -44,28 +44,28 @@ public class FilterTests
     public async Task AndFilter_TrueAndTrue_ReturnsTrue()
     {
         var filter = new AndFilter<string>(new AcceptFilter<string>(), new AcceptFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task AndFilter_TrueAndFalse_ReturnsFalse()
     {
         var filter = new AndFilter<string>(new AcceptFilter<string>(), new DenyFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task AndFilter_FalseAndTrue_ReturnsFalse()
     {
         var filter = new AndFilter<string>(new DenyFilter<string>(), new AcceptFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task AndFilter_FalseAndFalse_ReturnsFalse()
     {
         var filter = new AndFilter<string>(new DenyFilter<string>(), new DenyFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     // OrFilter
@@ -74,28 +74,28 @@ public class FilterTests
     public async Task OrFilter_TrueOrTrue_ReturnsTrue()
     {
         var filter = new OrFilter<string>(new AcceptFilter<string>(), new AcceptFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task OrFilter_TrueOrFalse_ReturnsTrue()
     {
         var filter = new OrFilter<string>(new AcceptFilter<string>(), new DenyFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task OrFilter_FalseOrTrue_ReturnsTrue()
     {
         var filter = new OrFilter<string>(new DenyFilter<string>(), new AcceptFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task OrFilter_FalseOrFalse_ReturnsFalse()
     {
         var filter = new OrFilter<string>(new DenyFilter<string>(), new DenyFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     // XorFilter
@@ -104,27 +104,27 @@ public class FilterTests
     public async Task XorFilter_TrueXorTrue_ReturnsFalse()
     {
         var filter = new XorFilter<string>(new AcceptFilter<string>(), new AcceptFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task XorFilter_TrueXorFalse_ReturnsTrue()
     {
         var filter = new XorFilter<string>(new AcceptFilter<string>(), new DenyFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task XorFilter_FalseXorTrue_ReturnsTrue()
     {
         var filter = new XorFilter<string>(new DenyFilter<string>(), new AcceptFilter<string>());
-        Assert.IsTrue(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsTrue(await filter.Filter("backend", NoFilters));
     }
 
     [TestMethod]
     public async Task XorFilter_FalseXorFalse_ReturnsFalse()
     {
         var filter = new XorFilter<string>(new DenyFilter<string>(), new DenyFilter<string>());
-        Assert.IsFalse(await filter.FilterEndpoint("endpoint", NoFilters));
+        Assert.IsFalse(await filter.Filter("backend", NoFilters));
     }
 }
