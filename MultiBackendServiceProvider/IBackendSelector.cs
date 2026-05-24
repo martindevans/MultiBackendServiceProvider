@@ -21,13 +21,13 @@ public interface IBackendSelector<TBackend>
 public class RandomSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public async ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
     {
         if (backends.Count == 0)
-            return null;
+            return new ValueTask<BackendState<TBackend>?>(result: null);
 
         var index = Random.Shared.Next(backends.Count);
-        return backends[index];
+        return new ValueTask<BackendState<TBackend>?>(result: backends[index]);
     }
 }
 
@@ -38,11 +38,13 @@ public class RandomSelector<TBackend>
 public class FirstSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public async ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
     {
-        return backends.Count > 0
-             ? backends[0]
-             : null;
+        return new ValueTask<BackendState<TBackend>?>(result:
+            backends.Count > 0
+                ? backends[0]
+                : null
+        );
     }
 }
 
@@ -53,10 +55,10 @@ public class FirstSelector<TBackend>
 public class LoadFactorSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public async ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
     {
         if (backends.Count == 0)
-            return null;
+            return new ValueTask<BackendState<TBackend>?>(result: null);
 
         BackendState<TBackend>? selectedBackend = null;
         var lowestLoadFactor = float.MaxValue;
@@ -73,6 +75,6 @@ public class LoadFactorSelector<TBackend>
             }
         }
 
-        return selectedBackend;
+        return new ValueTask<BackendState<TBackend>?>(result: selectedBackend);
     }
 }

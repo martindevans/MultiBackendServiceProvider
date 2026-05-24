@@ -7,7 +7,7 @@
 public interface IBackendFilter<in TBackend>
 {
     /// <summary>
-    /// Given and backend and a set of filters, return if the backend is allowed
+    /// Given a backend and a set of filters, return if the backend is allowed
     /// </summary>
     /// <param name="backend"></param>
     /// <param name="tags"></param>
@@ -29,7 +29,7 @@ public class AcceptFilter<TService>
 }
 
 /// <summary>
-/// Always denys
+/// Always denies
 /// </summary>
 public class DenyFilter<TService>
     : IBackendFilter<TService>

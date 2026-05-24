@@ -38,7 +38,7 @@ public sealed class BackendState<TBackend>
     }
 
     /// <summary>
-    /// Wait for this backend to become available
+    /// Wait for this backend to become available, acquires a slot if it returns true.
     /// </summary>
     /// <param name="timeout"></param>
     /// <param name="cancellationToken"></param>
@@ -56,8 +56,8 @@ public sealed class BackendState<TBackend>
         _semaphore.Release();
     }
 
-    public async Task<bool> CheckHealth(HttpClient http, ILogger logger, CancellationToken cancellation)
+    public Task<bool> CheckHealth(HttpClient http, ILogger logger, CancellationToken cancellation)
     {
-        return await _healthChecker.CheckHealth(http, logger, cancellation);
+        return _healthChecker.CheckHealth(http, logger, cancellation).AsTask();
     }
 }

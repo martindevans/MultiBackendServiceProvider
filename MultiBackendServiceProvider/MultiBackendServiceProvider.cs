@@ -67,21 +67,34 @@ public sealed class MultiBackendServiceProvider<TBackend>
             // If none are available give up
             if (backends.Count == 0)
                 return null;
-            
-            // Choose one
-            var result = await _selector.Select(backends, cancellation);
-            if (result == null)
-                return null;
 
-            // Check that it's still healthy, if not retry the whole thing
-            var health = await result.CheckHealth(_healthCheckClient, _logger, cancellation);
-            if (!health)
-                continue;
+            // Try to select a backend from this set
+            while (backends.Count > 0)
+            {
+                // Choose one, if not are selected give up entirely
+                var result = await _selector.Select(backends, cancellation);
+                if (result == null)
+                    return null;
 
-            // Try to acquire a slot
-            var scope = await Scope.TryCreate(result, TimeSpan.FromSeconds(0.1f), cancellation);
-            if (scope != null)
-                return scope;
+                // Check that it's still healthy, if not remove it from the set and retry
+                var health = await result.CheckHealth(_healthCheckClient, _logger, cancellation);
+                if (!health)
+                {
+                    backends.Remove(result);
+                    continue;
+                }
+
+                // Try to acquire a slot
+                var scope = await Scope.Acquire(result, TimeSpan.FromSeconds(0.1f), cancellation);
+                if (scope != null)
+                    return scope;
+                
+                // Backend is busy! Remove it.
+                backends.Remove(result);
+            }
+
+            // Wait a short time, so we don't hammer the health checking system
+            await Task.Delay(TimeSpan.FromSeconds(0.1f), cancellation);
         }
         
         // Fail :(
@@ -189,7 +202,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         }
 
         /// <summary>
-        /// Configuration for an backend
+        /// Configuration for a backend
         /// </summary>
         /// <param name="backend"></param>
         /// <param name="slots"></param>
@@ -239,7 +252,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
             _released = 0;
         }
 
-        public static async ValueTask<Scope?> TryCreate(BackendState<TBackend> backend, TimeSpan timeout, CancellationToken cancellation)
+        public static async ValueTask<Scope?> Acquire(BackendState<TBackend> backend, TimeSpan timeout, CancellationToken cancellation)
         {
             var acquired = await backend.Wait(timeout, cancellation);
             if (!acquired)
