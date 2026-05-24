@@ -62,7 +62,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         {
             // Get valid backends (healthy + filtered)
             var backends = await GetHealthyBackends(cancellation);
-            await FilterHealthyBackends(backends, _filter, tags, cancellation);
+            await FilterBackends(backends, _filter, tags, cancellation);
 
             // If none are available give up
             if (backends.Count == 0)
@@ -98,7 +98,6 @@ public sealed class MultiBackendServiceProvider<TBackend>
         }
         
         // Fail :(
-        cancellation.ThrowIfCancellationRequested();
         return null;
     }
 
@@ -140,7 +139,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="tags"></param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    private static async Task FilterHealthyBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    private static async Task FilterBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
         // Start a simultaneous filter check on every backend
         var pending = (
