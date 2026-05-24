@@ -1,17 +1,18 @@
-﻿using System.Diagnostics;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace MultiBackendServiceProvider;
 
 /// <summary>
-/// Provide multiple API endpoints for fault tolerance and load balancing. When acquiring a backend a "slot" is booked for the
+/// Provide multiple API backends for fault tolerance and load balancing. When acquiring a backend a "slot" is booked for the
 /// duration the backend is in use, so slot limits can be set per backend.
 /// </summary>
-public sealed class MultiBackendServiceProvider<TEndpoint>
+public sealed class MultiBackendServiceProvider<TBackend>
 {
     private readonly ILogger _logger;
-    private readonly IEndpointFilter<TEndpoint> _filter;
-    private readonly IReadOnlyList<Backend> _backends;
+    private readonly IBackendFilter<TBackend> _filter;
+    private readonly IBackendSelector<TBackend> _selector;
+    private readonly IReadOnlyList<BackendState<TBackend>> _backends;
     private readonly HttpClient _healthCheckClient;
 
     /// <summary>
@@ -20,57 +21,83 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
     /// <param name="http"></param>
     /// <param name="logger"></param>
     /// <param name="filter"></param>
-    /// <param name="endpoints">Endpoints, in order of preference</param>
-    public MultiBackendServiceProvider(IHttpClientFactory http, ILogger logger, IEndpointFilter<TEndpoint> filter, params EndpointConfig[] endpoints)
+    /// <param name="selector"></param>
+    /// <param name="backends">Backends, in order of preference</param>
+    public MultiBackendServiceProvider(IHttpClientFactory http, ILogger logger, IBackendFilter<TBackend> filter, IBackendSelector<TBackend> selector, params BackendConfig[] backends)
     {
         _logger = logger;
         _filter = filter;
-        _backends = endpoints.Select(a => new Backend(a.Endpoint, a.Slots, a.HealthChecker)).ToArray();
+        _selector = selector;
+        _backends = backends.Select(a => new BackendState<TBackend>(a.Backend, a.Slots, a.HealthChecker)).ToArray();
 
         // Create a client with a short timeout, for health checks
         _healthCheckClient = http.CreateClient();
         _healthCheckClient.Timeout = TimeSpan.FromSeconds(0.5f);
     }
 
+    #region GetBackend
     /// <summary>
-    /// Filter endpoints based on string filters.
-    /// </summary>
-    /// <param name="endpoint"></param>
-    /// <param name="filters"></param>
-    /// <returns>true, to allow endpoint.</returns>
-    private ValueTask<bool> FilterEndpoint(TEndpoint endpoint, IReadOnlyList<string> filters)
-    {
-        return _filter.FilterEndpoint(endpoint, filters);
-    }
-
-    /// <summary>
-    /// Get an available endpoint which is healthy and take an available slot.
+    /// Get an available backend which is healthy and take an available slot.
     /// </summary>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public Task<IScope?> GetEndpoint(CancellationToken cancellation)
+    public Task<IScope?> GetBackend(CancellationToken cancellation)
     {
-        return GetEndpoint([], cancellation);
+        return GetBackend([], cancellation);
     }
 
     /// <summary>
-    /// Get an available endpoint which is healthy and take an available slot. Filters out endpoints based on provided strings.
+    /// Get an available backend which is healthy and take an available slot. Filters out backends based on provided string tags.
     /// </summary>
-    /// <param name="filters">Strings that will be passed into endpoint filters</param>
+    /// <param name="tags">Strings that will be passed into backend filters</param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public async Task<IScope?> GetEndpoint(IReadOnlyList<string> filters, CancellationToken cancellation)
+    public async Task<IScope?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
-        // Start a health check on every backend
-        var pending = (from backend in _backends
-                       let task = backend.CheckHealth(_healthCheckClient, _logger, cancellation)
-                       select (backend, task)).ToList();
+        // Try to acquire a slot
+        while (!cancellation.IsCancellationRequested)
+        {
+            // Get valid backends (healthy + filtered)
+            var backends = await GetHealthyBackends(cancellation);
+            await FilterHealthyBackends(backends, tags, cancellation);
 
-        // Live backends
-        var live = new List<Backend>();
+            // Choose one
+            var result = await _selector.Select(backends, cancellation);
+            if (result == null)
+                continue;
 
-        // Check all backends and add them to the live list. The first healthy backend in the
-        // list that has capacity will be used.
+            // Check that it's still healthy
+            var health = await result.CheckHealth(_healthCheckClient, _logger, cancellation);
+            if (!health)
+                continue;
+
+            // Try to acquire a slot
+            var scope = await Scope.TryCreate(result, TimeSpan.FromSeconds(0.1f), cancellation);
+            if (scope != null)
+                return scope;
+        }
+        
+        // Fail :(
+        cancellation.ThrowIfCancellationRequested();
+        return null;
+    }
+
+    /// <summary>
+    /// Get a list of all backends which succeed the health check
+    /// </summary>
+    /// <param name="cancellation"></param>
+    /// <returns></returns>
+    private async Task<List<BackendState<TBackend>>> GetHealthyBackends(CancellationToken cancellation)
+    {
+        // Start a simultaneous health check on every backend
+        var pending = (
+            from backend in _backends
+            let task = backend.CheckHealth(_healthCheckClient, _logger, cancellation)
+            select (backend, task)
+        ).ToList();
+
+        // Find valid+live backends
+        var live = new List<BackendState<TBackend>>();
         foreach (var (backend, task) in pending)
         {
             // Ignore items that fail the health check
@@ -78,186 +105,96 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
             if (!response)
                 continue;
 
-            // Check if the backend is suitable
-            var ok = await FilterEndpoint(backend.Endpoint, filters);
-            if (!ok)
-                continue;
-
             // Backend is alive!
             live.Add(backend);
-
-            // Backend has capacity, try to use this one
-            if (backend.AvailableSlots > 0)
-            {
-                var scope = await CreateScope(backend, TimeSpan.FromSeconds(0.1f), cancellation);
-                if (scope != null)
-                    return scope;
-            }
         }
 
-        // Immediately fail if every backend failed the health check
-        if (live.Count == 0)
-            return null;
-
-        // Cycle through backends trying to acquire a slot
-        var remove = new List<Backend>();
-        while (live.Count > 0 && !cancellation.IsCancellationRequested)
-        {
-            foreach (var backend in live)
-            {
-                // Do another health check
-                if (!await backend.CheckHealth(_healthCheckClient, _logger, cancellation))
-                {
-                    remove.Add(backend);
-                    continue;
-                }
-
-                // Try to acquire a scope for this backend
-                if (backend.AvailableSlots > 0)
-                {
-                    var scope = await CreateScope(backend, TimeSpan.FromSeconds(0.1f), cancellation);
-                    if (scope != null)
-                        return scope;
-                }
-            }
-
-            // Remove dead backends
-            foreach (var item in remove)
-                live.Remove(item);
-            remove.Clear();
-
-            // We checked every backend, and didn't acquire a slot from any of them! Wait a bit and try again
-            await Task.Delay(TimeSpan.FromSeconds(0.1f), cancellation);
-        }
-
-        // No live backends available
-        return default;
-
-        static async ValueTask<Scope?> CreateScope(Backend backend, TimeSpan timeout, CancellationToken cancellation)
-        {
-            var acquired = await backend.Wait(timeout, cancellation);
-            if (!acquired)
-                return null;
-
-            return new Scope(backend);
-        }
+        return live;
     }
 
     /// <summary>
-    /// An API backend
+    /// Filter out backends based on tags
     /// </summary>
-    private class Backend
+    /// <param name="backends"></param>
+    /// <param name="tags"></param>
+    /// <param name="cancellation"></param>
+    /// <returns></returns>
+    private async Task FilterHealthyBackends(List<BackendState<TBackend>> backends, IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
-        private readonly SemaphoreSlim _semaphore;
-        private readonly IEndpointHealthChecker _healthChecker;
+        // Start a simultaneous filter check on every backend
+        var pending = (
+            from backend in _backends
+#pragma warning disable CA2012 // It's ok to store a ValueTask here, we're only going to await it once
+            let task = _filter.Filter(backend.Backend, tags)
+#pragma warning restore CA2012
+            select task
+        ).ToList();
 
-        /// <summary>
-        /// Get the backend object
-        /// </summary>
-        public TEndpoint Endpoint { get; }
-
-        /// <summary>
-        /// Number of slots available for use
-        /// </summary>
-        public int AvailableSlots => _semaphore.CurrentCount;
-
-        /// <summary>
-        /// Number of slots available for use
-        /// </summary>
-        public int TotalSlots { get; }
-
-        /// <summary>
-        /// Create a new backend
-        /// </summary>
-        /// <param name="endpoint"></param>
-        /// <param name="concurrentAccess"></param>
-        /// <param name="healthChecker"></param>
-        public Backend(TEndpoint endpoint, int concurrentAccess, IEndpointHealthChecker healthChecker)
+        // Filter out, working backwards so indices remain valid
+        for (var i = backends.Count - 1; i >= 0; i--)
         {
-            _semaphore = new(concurrentAccess);
+            cancellation.ThrowIfCancellationRequested();
 
-            Endpoint = endpoint;
-            _healthChecker = healthChecker;
-            TotalSlots = concurrentAccess;
-        }
-
-        /// <summary>
-        /// Wait for this backend to become available
-        /// </summary>
-        /// <param name="timeout"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public Task<bool> Wait(TimeSpan timeout, CancellationToken cancellationToken)
-        {
-            return _semaphore.WaitAsync(timeout, cancellationToken);
-        }
-
-        /// <summary>
-        /// Release a slot to this backend
-        /// </summary>
-        public void Release()
-        {
-            _semaphore.Release();
-        }
-
-        public async Task<bool> CheckHealth(HttpClient http, ILogger logger, CancellationToken cancellation)
-        {
-            return await _healthChecker.CheckHealth(http, logger, cancellation);
+            var ok = await pending[i];
+            if (!ok)
+                backends.RemoveAt(i);
         }
     }
+    #endregion
 
     /// <summary>
-    /// Configuration for an endpoint
+    /// Configuration for a backend
     /// </summary>
-    public sealed record EndpointConfig
+    public sealed record BackendConfig
     {
         /// <summary>
-        /// Gets the endpoint associated with this configuration.
+        /// Gets the backend associated with this configuration.
         /// </summary>
-        public TEndpoint Endpoint { get; init; }
+        public TBackend Backend { get; init; }
 
         /// <summary>
-        /// Gets the maximum number of concurrent accesses allowed for the endpoint.
+        /// Gets the maximum number of concurrent accesses allowed for the backend.
         /// </summary>
         /// <remarks>
-        /// This property defines the total number of "slots" available for concurrent usage of the endpoint.
-        /// It is used to limit the number of simultaneous operations that can be performed on the endpoint.
+        /// This property defines the total number of "slots" available for concurrent usage of the backend.
+        /// It is used to limit the number of simultaneous operations that can be performed on the backend.
         /// </remarks>
         public int Slots { get; init; }
 
         /// <summary>
-        /// Gets the health checker instance responsible for monitoring the health of the endpoint.
+        /// Gets the health checker instance responsible for monitoring the health of the backend.
         /// </summary>
         /// <value>
-        /// An implementation of <see cref="IEndpointHealthChecker"/> used to determine the availability of the endpoint.
+        /// An implementation of <see cref="IBackendHealthChecker"/> used to determine the availability of the backend.
         /// </value>
-        public IEndpointHealthChecker HealthChecker { get; init; }
+        public IBackendHealthChecker HealthChecker { get; init; }
 
         /// <summary>
-        /// Create endpoint config using default HTTP health checker.
+        /// Create backend config using default HTTP health checker.
         /// </summary>
-        /// <param name="Endpoint"></param>
+        /// <param name="Backend"></param>
         /// <param name="Slots"></param>
         /// <param name="HealthCheck"></param>
-        public EndpointConfig(TEndpoint Endpoint, int Slots, Uri HealthCheck)
-            : this(Endpoint, Slots, new HttpHealthChecker(HealthCheck))
+        public BackendConfig(TBackend Backend, int Slots, Uri HealthCheck)
+            : this(Backend, Slots, new HttpHealthChecker(HealthCheck))
         {
         }
 
         /// <summary>
-        /// Configuration for an endpoint
+        /// Configuration for an backend
         /// </summary>
-        /// <param name="endpoint"></param>
+        /// <param name="backend"></param>
         /// <param name="slots"></param>
         /// <param name="healthChecker"></param>
-        public EndpointConfig(TEndpoint endpoint, int slots, IEndpointHealthChecker healthChecker)
+        public BackendConfig(TBackend backend, int slots, IBackendHealthChecker healthChecker)
         {
-            Endpoint = endpoint;
+            Backend = backend;
             Slots = slots;
             HealthChecker = healthChecker;
         }
     }
 
+    #region scope
     /// <summary>
     /// A scope of backend usage, while this is held a slot is consumed on the backend
     /// </summary>
@@ -265,9 +202,9 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
         : IDisposable
     {
         /// <summary>
-        /// Get the endpoint associated with this scope
+        /// Get the backend associated with this scope
         /// </summary>
-        public TEndpoint Endpoint { get; }
+        public TBackend Backend { get; }
     }
 
     /// <summary>
@@ -276,22 +213,31 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
     private sealed class Scope
         : IScope
     {
-        private readonly Backend _backend;
+        private readonly BackendState<TBackend> _backend;
         private int _released;
 
         /// <summary>
-        /// Get the endpoint associated with this scope
+        /// Get the backend associated with this scope
         /// </summary>
-        public TEndpoint Endpoint => _backend.Endpoint;
+        public TBackend Backend => _backend.Backend;
 
         /// <summary>
         /// Create a new scope. <b>Must acquire a semaphore slot **before** calling this!</b>
         /// </summary>
         /// <param name="backend"></param>
-        public Scope(Backend backend)
+        private Scope(BackendState<TBackend> backend)
         {
             _backend = backend;
             _released = 0;
+        }
+
+        public static async ValueTask<Scope?> TryCreate(BackendState<TBackend> backend, TimeSpan timeout, CancellationToken cancellation)
+        {
+            var acquired = await backend.Wait(timeout, cancellation);
+            if (!acquired)
+                return null;
+
+            return new Scope(backend);
         }
 
         ~Scope()
@@ -312,7 +258,9 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
                 _backend.Release();
         }
     }
+    #endregion
 
+    #region status
     /// <summary>
     /// Get the status of all backends
     /// </summary>
@@ -336,7 +284,7 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
             }
 
             timer.Stop();
-            return new Status(backend.Endpoint, backend.AvailableSlots, backend.TotalSlots, result, timer.Elapsed);
+            return new Status(backend.Backend, backend.AvailableSlots, backend.TotalSlots, result, timer.Elapsed);
         }).ToList();
 
         return await Task.WhenAll(pending);
@@ -345,10 +293,11 @@ public sealed class MultiBackendServiceProvider<TEndpoint>
     /// <summary>
     /// Status info for a backend
     /// </summary>
-    /// <param name="Endpoint"></param>
+    /// <param name="Backend"></param>
     /// <param name="AvailableSlots"></param>
     /// <param name="MaxSlots"></param>
-    /// <param name="Healthy"></param>
+    /// <param name="IsHealthy"></param>
     /// <param name="Latency"></param>
-    public record Status(TEndpoint Endpoint, int AvailableSlots, int MaxSlots, bool Healthy, TimeSpan Latency);
+    public record Status(TBackend Backend, int AvailableSlots, int MaxSlots, bool IsHealthy, TimeSpan Latency);
+    #endregion
 }

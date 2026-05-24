@@ -14,13 +14,14 @@ public sealed class HealthCheckTests
             new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
-            new MultiBackendServiceProvider<string>.EndpointConfig("a", 1, new FixedHealthChecker(false)),
-            new MultiBackendServiceProvider<string>.EndpointConfig("b", 1, new FixedHealthChecker(true)));
+            new FirstSelector<string>(),
+            new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FixedHealthChecker(false)),
+            new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetEndpoint(CancellationToken.None);
+        using var scope = await provider.GetBackend(CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Endpoint);
+        Assert.AreEqual("b", scope.Backend);
     }
 }
 
@@ -43,7 +44,7 @@ public sealed class AlwaysHealthyHandler
 }
 
 public sealed class FixedHealthChecker(bool healthy)
-    : IEndpointHealthChecker
+    : IBackendHealthChecker
 {
     public ValueTask<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
     {
