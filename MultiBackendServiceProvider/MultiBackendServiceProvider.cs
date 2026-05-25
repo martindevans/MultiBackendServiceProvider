@@ -12,102 +12,90 @@ public sealed class MultiBackendServiceProvider<TBackend>
     private readonly ILogger _logger;
     private readonly IBackendFilter<TBackend> _filter;
     private readonly IBackendSelector<TBackend> _selector;
-    private readonly IReadOnlyList<BackendState<TBackend>> _backends;
-    private readonly HttpClient _healthCheckClient;
+    private readonly IReadOnlyList<Backend<TBackend>> _backends;
 
     /// <summary>
     /// Create a new provider
     /// </summary>
-    /// <param name="http"></param>
     /// <param name="logger"></param>
     /// <param name="filter"></param>
     /// <param name="selector"></param>
     /// <param name="backends">Backends, in order of preference</param>
-    public MultiBackendServiceProvider(IHttpClientFactory http, ILogger logger, IBackendFilter<TBackend> filter, IBackendSelector<TBackend> selector, params BackendConfig[] backends)
+    public MultiBackendServiceProvider(ILogger logger, IBackendFilter<TBackend> filter, IBackendSelector<TBackend> selector, params BackendConfig[] backends)
     {
         _logger = logger;
         _filter = filter;
         _selector = selector;
-        _backends = backends.Select(a => new BackendState<TBackend>(a.Backend, a.Slots, a.HealthChecker)).ToArray();
-
-        // Create a client with a short timeout, for health checks
-        _healthCheckClient = http.CreateClient();
-        _healthCheckClient.Timeout = TimeSpan.FromSeconds(0.5f);
+        _backends = backends.Select(a => new Backend<TBackend>(a.Backend, a.Slots, a.HealthChecker)).ToArray();
     }
 
     #region GetBackend
     /// <summary>
-    /// Get an available backend which is healthy and take an available slot.
+    /// Get an available backend which is healthy and has slots.
     /// </summary>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public Task<BackendState<TBackend>.IScope?> GetBackend(CancellationToken cancellation)
+    public Task<Backend<TBackend>?> GetBackend(CancellationToken cancellation)
     {
         return GetBackend([], cancellation);
     }
 
     /// <summary>
-    /// Get an available backend which is healthy and take an available slot. Filters out backends based on provided string tags.
+    /// Get an available backend which is healthy and has an available slot. Filters out backends based on provided string tags.
     /// </summary>
     /// <param name="tags">Strings that will be passed into backend filters</param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public async Task<BackendState<TBackend>.IScope?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    public async Task<Backend<TBackend>?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
+        // If none are available give up
         if (_backends.Count == 0)
             return null;
 
+        cancellation.ThrowIfCancellationRequested();
+
         // Backends that have been filtered out. It's assumed this won't change so we
         // cache the filter result.
-        var filterCache = new HashSet<BackendState<TBackend>>();
+        var filterCache = new HashSet<Backend<TBackend>>();
+        
+        // Get valid backends (healthy + filtered)
+        var backends = await GetHealthyBackends(cancellation);
+        await FilterBackends(backends, _filter, tags, filterCache, cancellation);
 
-        // Try to acquire a slot
-        while (true)
+        // If none are available give up
+        if (backends.Count == 0)
+            return null;
+
+        // Try to select a backend from this set
+        while (backends.Count > 0)
         {
-            cancellation.ThrowIfCancellationRequested();
-            
-            // Get valid backends (healthy + filtered)
-            var backends = await GetHealthyBackends(cancellation);
-            await FilterBackends(backends, _filter, tags, filterCache, cancellation);
-
-            // If none are available give up
-            if (backends.Count == 0)
+            // Choose one; if none are selected, give up entirely
+            var result = await _selector.Select(backends, cancellation);
+            if (result == null)
                 return null;
 
-            // Try to select a backend from this set
-            while (backends.Count > 0)
+            // Check that it's still healthy, if not remove it from the set and retry
+            var health = await result.CheckHealth(cancellation);
+            if (!health)
             {
-                // Choose one; if none are selected, give up entirely
-                var result = await _selector.Select(backends, cancellation);
-                if (result == null)
-                    return null;
-
-                // Check that it's still healthy, if not remove it from the set and retry
-                var health = await result.CheckHealth(_healthCheckClient, _logger, cancellation);
-                if (!health)
-                {
-                    backends.Remove(result);
-                    continue;
-                }
-
-                // Try to acquire a slot
-                var scope = await result.Acquire(TimeSpan.FromSeconds(0.1f), cancellation);
-                if (scope != null)
-                    return scope;
-                
-                // Backend is busy! Remove it.
                 backends.Remove(result);
+                continue;
             }
-            
-            // We only get here if:
-            // - Some backends were healthy
-            // - They were not filtered
-            // - One was selected but it was unhalthy or busy
-            //   - This applied to all backends that were initially chosen
 
-            // Wait a short time, so we don't hammer the health checking system
-            await Task.Delay(TimeSpan.FromSeconds(0.1f), cancellation);
+            // Are there any slots to acquire
+            if (result.AvailableSlots > 0)
+                return result;
+            
+            // Backend is busy! Remove it.
+            backends.Remove(result);
         }
+        
+        // We only get here if:
+        // - Some backends were healthy
+        // - They were not filtered
+        // - One was selected but it was unhealthy or had not slots
+        //   - This applied to all backends that were initially chosen
+        return null;
     }
 
     /// <summary>
@@ -115,17 +103,17 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// </summary>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    private async Task<List<BackendState<TBackend>>> GetHealthyBackends(CancellationToken cancellation)
+    private async Task<List<Backend<TBackend>>> GetHealthyBackends(CancellationToken cancellation)
     {
         // Start a simultaneous health check on every backend
         var pending = (
             from backend in _backends
-            let task = backend.CheckHealth(_healthCheckClient, _logger, cancellation)
+            let task = backend.CheckHealth(cancellation)
             select (backend, task)
         ).ToList();
 
         // Find valid+live backends
-        var live = new List<BackendState<TBackend>>();
+        var live = new List<Backend<TBackend>>();
         foreach (var (backend, task) in pending)
         {
             // Ignore items that fail the health check
@@ -149,7 +137,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="excluded"></param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    private static async Task FilterBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, HashSet<BackendState<TBackend>> excluded, CancellationToken cancellation)
+    private static async Task FilterBackends(List<Backend<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, HashSet<Backend<TBackend>> excluded, CancellationToken cancellation)
     {
         // Remove all backends that were previously filtered out
         backends.RemoveAll(excluded.Contains);
@@ -158,7 +146,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         var pending = (
             from backend in backends
 #pragma warning disable CA2012 // It's ok to store a ValueTask here, we're only going to await it once
-            let task = filter.Filter(backend.Backend, tags)
+            let task = filter.Filter(backend.Value, tags)
 #pragma warning restore CA2012
             select task
         ).ToList();
@@ -245,7 +233,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
             bool result;
             try
             {
-                result = await backend.CheckHealth(_healthCheckClient, _logger, cancellation);
+                result = await backend.CheckHealth(cancellation);
             }
             catch (Exception ex)
             {
@@ -254,7 +242,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
             }
 
             timer.Stop();
-            return new Status(backend.Backend, backend.AvailableSlots, backend.TotalSlots, result, timer.Elapsed);
+            return new Status(backend.Value, backend.AvailableSlots, backend.TotalSlots, result, timer.Elapsed);
         }).ToList();
 
         return await Task.WhenAll(pending);

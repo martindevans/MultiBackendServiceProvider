@@ -6,7 +6,7 @@ public class ScopeTests
     [TestMethod]
     public async Task ScopeDispose_IsThreadSafe_AndOnlyReleasesOnce()
     {
-        var state = new BackendState<string>("a", 1, new FixedHealthChecker(true));
+        var state = new Backend<string>("a", 1, new FixedHealthChecker(true));
         var scope = await state.Acquire(TimeSpan.FromMilliseconds(1), TestContext.CancellationToken);
         
         //var scope = await provider.GetBackend(CancellationToken.None);
@@ -22,7 +22,7 @@ public class ScopeTests
     [TestMethod]
     public async Task ScopeFinalize_Disposes()
     {
-        var state = new BackendState<string>("a", 1, new FixedHealthChecker(true));
+        var state = new Backend<string>("a", 1, new FixedHealthChecker(true));
 
         // Take a slot
         await AcquireAndLose(state);
@@ -36,7 +36,7 @@ public class ScopeTests
         Assert.AreEqual(1, state.TotalSlots);
     }
 
-    private async Task AcquireAndLose(BackendState<string> state)
+    private async Task AcquireAndLose(Backend<string> state)
     {
         await state.Acquire(TimeSpan.FromMilliseconds(1), TestContext.CancellationToken);
     }
@@ -44,7 +44,7 @@ public class ScopeTests
     [TestMethod]
     public async Task ScopeAcquire_OnlyAcquiresUpToMax()
     {
-        var state = new BackendState<string>("a", 1, new FixedHealthChecker(true));
+        var state = new Backend<string>("a", 1, new FixedHealthChecker(true));
         
         var scope1 = await state.Acquire(TimeSpan.FromMilliseconds(1), TestContext.CancellationToken);
         var scope2 = await state.Acquire(TimeSpan.FromMilliseconds(1), TestContext.CancellationToken);

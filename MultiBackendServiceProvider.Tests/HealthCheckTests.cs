@@ -1,5 +1,4 @@
 using System.Net;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MultiBackendServiceProvider.Tests;
@@ -11,14 +10,14 @@ public sealed class HealthCheckTests
     public async Task CustomHealthChecker_IsUsedPerBackend()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new FirstSelector<string>(),
             new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FixedHealthChecker(false)),
             new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
         Assert.AreEqual("b", scope.Backend);
@@ -28,14 +27,14 @@ public sealed class HealthCheckTests
     public async Task FailingBackendIsNotReturned()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new FirstSelector<string>(),
             new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FailLaterHealthChecker(1)),
             new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
         Assert.AreEqual("b", scope.Backend);
@@ -60,12 +59,19 @@ public sealed class AlwaysHealthyHandler
     }
 }
 
-public sealed class FixedHealthChecker(bool healthy)
+public sealed class FixedHealthChecker
     : IBackendHealthChecker
 {
-    public ValueTask<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
+    public bool Healthy { get; set; }
+
+    public FixedHealthChecker(bool healthy)
     {
-        return ValueTask.FromResult(healthy);
+        Healthy = healthy;
+    }
+    
+    public ValueTask<bool> CheckHealth(CancellationToken cancellation)
+    {
+        return ValueTask.FromResult(Healthy);
     }
 }
 
@@ -79,7 +85,7 @@ public sealed class FailLaterHealthChecker
         _countdown = countdown;
     }
 
-    public ValueTask<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
+    public ValueTask<bool> CheckHealth(CancellationToken cancellation)
     {
         if (_countdown <= 0)
             return ValueTask.FromResult(false);
