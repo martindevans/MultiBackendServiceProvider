@@ -52,6 +52,11 @@ public sealed class HttpHealthChecker
             using var result = await client.GetAsync(_healthCheck, cancellation);
             return result.IsSuccessStatusCode;
         }
+        catch (TaskCanceledException)
+        {
+            // Propagate cancellation
+            throw;
+        }
         catch
         {
             return false;
