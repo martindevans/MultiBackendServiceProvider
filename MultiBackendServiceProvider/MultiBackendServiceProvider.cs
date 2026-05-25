@@ -249,9 +249,9 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// </summary>
     /// <param name="Backend"></param>
     /// <param name="AvailableSlots"></param>
-    /// <param name="MaxSlots"></param>
+    /// <param name="TotalSlots"></param>
     /// <param name="IsHealthy"></param>
     /// <param name="Latency"></param>
-    public record Status(TBackend Backend, int AvailableSlots, int MaxSlots, bool IsHealthy, TimeSpan Latency);
+    public record Status(TBackend Backend, int AvailableSlots, int TotalSlots, bool IsHealthy, TimeSpan Latency);
     #endregion
 }
