@@ -49,7 +49,7 @@ public sealed class HttpHealthChecker
 
         try
         {
-            var result = await client.GetAsync(_healthCheck, cancellation);
+            using var result = await client.GetAsync(_healthCheck, cancellation);
             return result.IsSuccessStatusCode;
         }
         catch
