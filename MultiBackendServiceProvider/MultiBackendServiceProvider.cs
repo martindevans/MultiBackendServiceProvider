@@ -56,13 +56,19 @@ public sealed class MultiBackendServiceProvider<TBackend>
     {
         if (_backends.Count == 0)
             return null;
-        
+
+        // Backends that have been filtered out. It's assumed this won't change so we
+        // cache the filter result.
+        var filterCache = new HashSet<BackendState<TBackend>>();
+
         // Try to acquire a slot
-        while (!cancellation.IsCancellationRequested)
+        while (true)
         {
+            cancellation.ThrowIfCancellationRequested();
+            
             // Get valid backends (healthy + filtered)
             var backends = await GetHealthyBackends(cancellation);
-            await FilterBackends(backends, _filter, tags, cancellation);
+            await FilterBackends(backends, _filter, tags, filterCache, cancellation);
 
             // If none are available give up
             if (backends.Count == 0)
@@ -92,13 +98,16 @@ public sealed class MultiBackendServiceProvider<TBackend>
                 // Backend is busy! Remove it.
                 backends.Remove(result);
             }
+            
+            // We only get here if:
+            // - Some backends were healthy
+            // - They were not filtered
+            // - One was selected but it was unhalthy or busy
+            //   - This applied to all backends that were initially chosen
 
             // Wait a short time, so we don't hammer the health checking system
             await Task.Delay(TimeSpan.FromSeconds(0.1f), cancellation);
         }
-        
-        // Fail :(
-        return null;
     }
 
     /// <summary>
@@ -137,10 +146,14 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="backends"></param>
     /// <param name="filter"></param>
     /// <param name="tags"></param>
+    /// <param name="excluded"></param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    private static async Task FilterBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    private static async Task FilterBackends(List<BackendState<TBackend>> backends, IBackendFilter<TBackend> filter, IReadOnlyCollection<string> tags, HashSet<BackendState<TBackend>> excluded, CancellationToken cancellation)
     {
+        // Remove all backends that were previously filtered out
+        backends.RemoveAll(excluded.Contains);
+        
         // Start a simultaneous filter check on every backend
         var pending = (
             from backend in backends
@@ -157,7 +170,10 @@ public sealed class MultiBackendServiceProvider<TBackend>
 
             var ok = await pending[i];
             if (!ok)
+            {
+                excluded.Add(backends[i]);
                 backends.RemoveAt(i);
+            }
         }
     }
     #endregion

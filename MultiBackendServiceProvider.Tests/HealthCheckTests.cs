@@ -23,6 +23,23 @@ public sealed class HealthCheckTests
         Assert.IsNotNull(scope);
         Assert.AreEqual("b", scope.Backend);
     }
+
+    [TestMethod]
+    public async Task FailingBackendIsNotReturned()
+    {
+        var provider = new MultiBackendServiceProvider<string>(
+            new StubHttpClientFactory(new AlwaysHealthyHandler()),
+            NullLogger.Instance,
+            new AcceptFilter<string>(),
+            new FirstSelector<string>(),
+            new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FailLaterHealthChecker(1)),
+            new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)));
+
+        using var scope = await provider.GetBackend(CancellationToken.None);
+
+        Assert.IsNotNull(scope);
+        Assert.AreEqual("b", scope.Backend);
+    }
 }
 
 public sealed class StubHttpClientFactory(HttpMessageHandler handler)
@@ -49,5 +66,25 @@ public sealed class FixedHealthChecker(bool healthy)
     public ValueTask<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
     {
         return ValueTask.FromResult(healthy);
+    }
+}
+
+public sealed class FailLaterHealthChecker
+    : IBackendHealthChecker
+{
+    private int _countdown;
+
+    public FailLaterHealthChecker(int countdown)
+    {
+        _countdown = countdown;
+    }
+
+    public ValueTask<bool> CheckHealth(HttpClient client, ILogger logger, CancellationToken cancellation)
+    {
+        if (_countdown <= 0)
+            return ValueTask.FromResult(false);
+
+        _countdown--;
+        return ValueTask.FromResult(true);
     }
 }

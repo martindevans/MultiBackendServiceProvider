@@ -15,6 +15,19 @@ public interface IBackendSelector<TBackend>
 }
 
 /// <summary>
+/// Always select nothing
+/// </summary>
+/// <typeparam name="TBackend"></typeparam>
+public class NoneSelector<TBackend>
+    : IBackendSelector<TBackend>
+{
+    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    {
+        return new ValueTask<BackendState<TBackend>?>(result: null);
+    }
+}
+
+/// <summary>
 /// Select a random backend
 /// </summary>
 /// <typeparam name="TBackend"></typeparam>

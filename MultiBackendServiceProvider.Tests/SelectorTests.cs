@@ -1,4 +1,6 @@
-﻿namespace MultiBackendServiceProvider.Tests;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+
+namespace MultiBackendServiceProvider.Tests;
 
 [TestClass]
 public class SelectorTests
