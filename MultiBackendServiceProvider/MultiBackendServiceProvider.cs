@@ -93,7 +93,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         // We only get here if:
         // - Some backends were healthy
         // - They were not filtered
-        // - One was selected but it was unhealthy or had not slots
+        // - One was selected but it was unhealthy or had no slots
         //   - This applied to all backends that were initially chosen
         return null;
     }
