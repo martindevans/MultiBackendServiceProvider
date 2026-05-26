@@ -20,7 +20,7 @@ public sealed class HealthCheckTests
         using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Backend);
+        Assert.AreEqual("b", scope.Backend.Value);
     }
 
     [TestMethod]
@@ -37,7 +37,7 @@ public sealed class HealthCheckTests
         using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Backend);
+        Assert.AreEqual("b", scope.Backend.Value);
     }
 }
 

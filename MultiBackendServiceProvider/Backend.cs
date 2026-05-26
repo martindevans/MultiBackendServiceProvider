@@ -73,7 +73,7 @@ public sealed class Backend<TBackend>
         /// <summary>
         /// Get the backend associated with this scope
         /// </summary>
-        public TBackend Backend { get; }
+        public Backend<TBackend> Backend { get; }
     }
 
     /// <summary>
@@ -88,7 +88,7 @@ public sealed class Backend<TBackend>
         /// <summary>
         /// Get the backend associated with this scope
         /// </summary>
-        public TBackend Backend => _backend.Value;
+        public Backend<TBackend> Backend => _backend;
 
         /// <summary>
         /// Create a new scope. <b>Must acquire a semaphore slot **before** calling this!</b>

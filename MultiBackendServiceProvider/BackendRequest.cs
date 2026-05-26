@@ -35,7 +35,7 @@ public class BackendRequest<TBackend>
             _backend = null;
         }
 
-        // If we've got a backend we previously used, check if it's healthy
+        // Check if the backend we used last time is healthy
         if (_backend != null)
         {
             var healthy = await _backend.CheckHealth(cancellation);
@@ -46,7 +46,7 @@ public class BackendRequest<TBackend>
             }
         }
         
-        // If we've still got a healthy backend we previously used, try to acquire a slot now
+        // Try to acquire a scope from the backend we used last time
         if (_backend != null)
         {
             var scope = await _backend.Acquire(_timeout, cancellation);
@@ -54,20 +54,15 @@ public class BackendRequest<TBackend>
                 return scope;
         }
 
-        // Choose a new backend
-        var backend = await provider.GetBackend(_tags, cancellation);
-        if (backend == null)
-            return null;
-        
-        // Try to acquire a scope, if it succeeds save this backend for next time
-        var scope2 = await backend.Acquire(_timeout, cancellation);
+        // Acquire a new scope from a fresh backend
+        var scope2 = await provider.Acquire(_tags, cancellation);
         if (scope2 != null)
         {
             _provider = provider;
-            _backend = backend;
+            _backend = scope2.Backend;
             return scope2;
         }
-
+        
         return null;
     }
 }

@@ -67,7 +67,7 @@ public class MultiBackendServiceProviderTests
         using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("c", scope.Backend);
+        Assert.AreEqual("c", scope.Backend.Value);
     }
 
     [TestMethod]
@@ -117,7 +117,7 @@ public class MultiBackendServiceProviderTests
         using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Backend);
+        Assert.AreEqual("b", scope.Backend.Value);
     }
 
     private class NameFilter

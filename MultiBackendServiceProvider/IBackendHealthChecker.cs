@@ -27,8 +27,10 @@ public sealed class HttpHealthChecker
 
     static HttpHealthChecker()
     {
-        _staticClient = new HttpClient();
-        _staticClient.Timeout = TimeSpan.FromSeconds(0.5f);
+        _staticClient = new HttpClient()
+        {
+            Timeout = TimeSpan.FromSeconds(0.5f)
+        };
     }
 
     /// <summary>

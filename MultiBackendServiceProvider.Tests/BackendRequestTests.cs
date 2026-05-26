@@ -20,7 +20,7 @@ public class BackendRequestTests
         using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Backend);
+        Assert.AreEqual("b", scope.Backend.Value);
     }
 
     [TestMethod]
@@ -40,17 +40,17 @@ public class BackendRequestTests
 
         string req1;
         using (var scope = await request.Acquire(provider, CancellationToken.None))
-            req1 = scope!.Backend;
+            req1 = scope!.Backend.Value;
 
         string req2;
         using (var scope = await request.Acquire(provider, CancellationToken.None))
-            req2 = scope!.Backend;
+            req2 = scope!.Backend.Value;
 
         checker.Healthy = true;
         
         string req3;
         using (var scope = await request.Acquire(provider, CancellationToken.None))
-            req3 = scope!.Backend;
+            req3 = scope!.Backend.Value;
 
         Assert.AreEqual(req1, req2);
         Assert.AreEqual(req2, req3);
@@ -74,7 +74,7 @@ public class BackendRequestTests
 
         // Get a backend
         using (var scope = await request.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("b", scope?.Backend);
+            Assert.AreEqual("b", scope?.Backend.Value);
 
         checker2.Healthy = false;
         checker1.Healthy = true;
@@ -82,7 +82,7 @@ public class BackendRequestTests
         // Get another backend. Won't be sticky, since that backend has failed.
 
         using (var scope = await request.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
     }
 
     [TestMethod]
@@ -101,22 +101,22 @@ public class BackendRequestTests
 
         // Get a backend for request 1
         using (var scope = await request1.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
         // Get a backend for request 2
         using (var scope = await request2.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
         // Both backends are now sticky to backend A!
 
         // Acquire a scope for request 1
         using (var scope = await request1.Acquire(provider, CancellationToken.None))
         {
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
             // Get a backend for request 2. Since A is busy this will be B
             using (var scopeInner = await request2.Acquire(provider, CancellationToken.None))
-                Assert.AreEqual("b", scopeInner?.Backend);
+                Assert.AreEqual("b", scopeInner?.Backend.Value);
         }
     }
 
@@ -137,27 +137,27 @@ public class BackendRequestTests
 
         // Get a backend for request 1
         using (var scope = await request1.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
         // Get a backend for request 2
         using (var scope = await request2.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
         // Get a backend for request 3
         using (var scope = await request3.Acquire(provider, CancellationToken.None))
-            Assert.AreEqual("a", scope?.Backend);
+            Assert.AreEqual("a", scope?.Backend.Value);
 
         // All backends are now sticky to backend A!
 
         // Acquire a scope for request 1
         using (var scope1 = await request1.Acquire(provider, CancellationToken.None))
         {
-            Assert.AreEqual("a", scope1?.Backend);
+            Assert.AreEqual("a", scope1?.Backend.Value);
 
             // Get a backend for request 2. Since A is busy this will be B
             using (var scope2 = await request2.Acquire(provider, CancellationToken.None))
             {
-                Assert.AreEqual("b", scope2?.Backend);
+                Assert.AreEqual("b", scope2?.Backend.Value);
 
                 // All backends are busy! Return null.
                 using (var scope3 = await request2.Acquire(provider, CancellationToken.None))

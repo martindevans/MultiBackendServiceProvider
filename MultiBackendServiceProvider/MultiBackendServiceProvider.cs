@@ -35,9 +35,9 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// </summary>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public Task<Backend<TBackend>?> GetBackend(CancellationToken cancellation)
+    public Task<Backend<TBackend>.IScope?> Acquire(CancellationToken cancellation)
     {
-        return GetBackend([], cancellation);
+        return Acquire([], cancellation);
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="tags">Strings that will be passed into backend filters</param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    public async Task<Backend<TBackend>?> GetBackend(IReadOnlyCollection<string> tags, CancellationToken cancellation)
+    public async Task<Backend<TBackend>.IScope?> Acquire(IReadOnlyCollection<string> tags, CancellationToken cancellation)
     {
         // If none are available give up
         if (_backends.Count == 0)
@@ -82,10 +82,11 @@ public sealed class MultiBackendServiceProvider<TBackend>
                 continue;
             }
 
-            // Are there any slots to acquire
-            if (result.AvailableSlots > 0)
-                return result;
-            
+            // Try to acquire a scope
+            var scope = await result.Acquire(TimeSpan.FromMilliseconds(50), cancellation);
+            if (scope != null)
+                return scope;
+
             // Backend is busy! Remove it.
             backends.Remove(result);
         }
