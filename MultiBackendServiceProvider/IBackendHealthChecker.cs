@@ -54,8 +54,13 @@ public sealed class HttpHealthChecker
         }
         catch (TaskCanceledException)
         {
-            // Propagate cancellation
-            throw;
+            // This might be a timeout or a genuine cancellation.
+            
+            // Check for cancellation
+            cancellation.ThrowIfCancellationRequested();
+
+            // Just a timeout
+            return false;
         }
         catch
         {
