@@ -15,6 +15,8 @@ public class BackendRequest<TBackend>
     private MultiBackendServiceProvider<TBackend>? _provider;
     private Backend<TBackend>? _backend;
 
+    private SemaphoreSlim _lock = new(1, 1);
+
     public BackendRequest(TimeSpan timeout, params string[] tags)
     {
         _timeout = timeout;
@@ -28,41 +30,49 @@ public class BackendRequest<TBackend>
 
     public async Task<Backend<TBackend>.IScope?> Acquire(MultiBackendServiceProvider<TBackend> provider, CancellationToken cancellation)
     {
-        // Clear previous if the provider has changed
-        if (!ReferenceEquals(provider, _provider))
+        await _lock.WaitAsync(_timeout, cancellation);
+        try
         {
-            _provider = null;
-            _backend = null;
-        }
-
-        // Check if the backend we used last time is healthy
-        if (_backend != null)
-        {
-            var healthy = await _backend.CheckHealth(cancellation);
-            if (!healthy)
+            // Clear previous if the provider has changed
+            if (!ReferenceEquals(provider, _provider))
             {
                 _provider = null;
                 _backend = null;
             }
-        }
-        
-        // Try to acquire a scope from the backend we used last time
-        if (_backend != null)
-        {
-            var scope = await _backend.Acquire(_timeout, cancellation);
-            if (scope != null)
-                return scope;
-        }
 
-        // Acquire a new scope from a fresh backend
-        var scope2 = await provider.Acquire(_tags, cancellation);
-        if (scope2 != null)
-        {
-            _provider = provider;
-            _backend = scope2.Backend;
-            return scope2;
+            // Check if the backend we used last time is healthy
+            if (_backend != null)
+            {
+                var healthy = await _backend.CheckHealth(cancellation);
+                if (!healthy)
+                {
+                    _provider = null;
+                    _backend = null;
+                }
+            }
+
+            // Try to acquire a scope from the backend we used last time
+            if (_backend != null)
+            {
+                var scope = await _backend.Acquire(_timeout, cancellation);
+                if (scope != null)
+                    return scope;
+            }
+
+            // Acquire a new scope from a fresh backend
+            var scope2 = await provider.Acquire(_tags, cancellation);
+            if (scope2 != null)
+            {
+                _provider = provider;
+                _backend = scope2.Backend;
+                return scope2;
+            }
+
+            return null;
         }
-        
-        return null;
+        finally
+        {
+            _lock.Release();
+        }
     }
 }
