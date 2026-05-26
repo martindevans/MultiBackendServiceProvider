@@ -9,13 +9,13 @@ public class MultiBackendServiceProviderTests
     public async Task NoBackendsSelectsNone()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new FirstSelector<string>()
         );
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNull(scope);
     }
@@ -24,14 +24,14 @@ public class MultiBackendServiceProviderTests
     public async Task SelectNoneSelectsNone()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new NoneSelector<string>(),
             new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FixedHealthChecker(true)),
             new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNull(scope);
     }
@@ -40,14 +40,14 @@ public class MultiBackendServiceProviderTests
     public async Task AllUnhealthySelectsNone()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new FirstSelector<string>(),
             new MultiBackendServiceProvider<string>.BackendConfig("a", 1, new FixedHealthChecker(false)),
             new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(false)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNull(scope);
     }
@@ -56,7 +56,6 @@ public class MultiBackendServiceProviderTests
     public async Task BusyBackendSelectsNext()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new FirstSelector<string>(),
@@ -64,17 +63,17 @@ public class MultiBackendServiceProviderTests
             new MultiBackendServiceProvider<string>.BackendConfig("b", 0, new FixedHealthChecker(true)),
             new MultiBackendServiceProvider<string>.BackendConfig("c", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("c", scope.Backend);
+        Assert.AreEqual("c", scope.Backend.Value);
     }
 
     [TestMethod]
     public async Task StatusReportIsCorrect()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new AcceptFilter<string>(),
             new NoneSelector<string>(),
@@ -107,7 +106,6 @@ public class MultiBackendServiceProviderTests
     public async Task ItAppliesFiltering()
     {
         var provider = new MultiBackendServiceProvider<string>(
-            new StubHttpClientFactory(new AlwaysHealthyHandler()),
             NullLogger.Instance,
             new NameFilter("b"),
             new FirstSelector<string>(),
@@ -115,10 +113,11 @@ public class MultiBackendServiceProviderTests
             new MultiBackendServiceProvider<string>.BackendConfig("b", 1, new FixedHealthChecker(true)),
             new MultiBackendServiceProvider<string>.BackendConfig("c", 1, new FixedHealthChecker(true)));
 
-        using var scope = await provider.GetBackend(CancellationToken.None);
+        var request = new BackendRequest<string>();
+        using var scope = await request.Acquire(provider, CancellationToken.None);
 
         Assert.IsNotNull(scope);
-        Assert.AreEqual("b", scope.Backend);
+        Assert.AreEqual("b", scope.Backend.Value);
     }
 
     private class NameFilter

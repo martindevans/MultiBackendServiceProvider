@@ -11,7 +11,7 @@ public interface IBackendSelector<TBackend>
     /// <param name="backends">Set of backends to choose from</param>
     /// <param name="cancellation"></param>
     /// <returns></returns>
-    ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation);
+    ValueTask<Backend<TBackend>?> Select(IReadOnlyList<Backend<TBackend>> backends, CancellationToken cancellation);
 }
 
 /// <summary>
@@ -21,9 +21,9 @@ public interface IBackendSelector<TBackend>
 public class NoneSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<Backend<TBackend>?> Select(IReadOnlyList<Backend<TBackend>> backends, CancellationToken cancellation)
     {
-        return new ValueTask<BackendState<TBackend>?>(result: null);
+        return new ValueTask<Backend<TBackend>?>(result: null);
     }
 }
 
@@ -34,13 +34,13 @@ public class NoneSelector<TBackend>
 public class RandomSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<Backend<TBackend>?> Select(IReadOnlyList<Backend<TBackend>> backends, CancellationToken cancellation)
     {
         if (backends.Count == 0)
-            return new ValueTask<BackendState<TBackend>?>(result: null);
+            return new ValueTask<Backend<TBackend>?>(result: null);
 
         var index = Random.Shared.Next(backends.Count);
-        return new ValueTask<BackendState<TBackend>?>(result: backends[index]);
+        return new ValueTask<Backend<TBackend>?>(result: backends[index]);
     }
 }
 
@@ -51,9 +51,9 @@ public class RandomSelector<TBackend>
 public class FirstSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<Backend<TBackend>?> Select(IReadOnlyList<Backend<TBackend>> backends, CancellationToken cancellation)
     {
-        return new ValueTask<BackendState<TBackend>?>(result:
+        return new ValueTask<Backend<TBackend>?>(result:
             backends.Count > 0
                 ? backends[0]
                 : null
@@ -68,12 +68,12 @@ public class FirstSelector<TBackend>
 public class LoadFactorSelector<TBackend>
     : IBackendSelector<TBackend>
 {
-    public ValueTask<BackendState<TBackend>?> Select(IReadOnlyList<BackendState<TBackend>> backends, CancellationToken cancellation)
+    public ValueTask<Backend<TBackend>?> Select(IReadOnlyList<Backend<TBackend>> backends, CancellationToken cancellation)
     {
         if (backends.Count == 0)
-            return new ValueTask<BackendState<TBackend>?>(result: null);
+            return new ValueTask<Backend<TBackend>?>(result: null);
 
-        BackendState<TBackend>? selectedBackend = null;
+        Backend<TBackend>? selectedBackend = null;
         var lowestLoadFactor = float.MaxValue;
 
         foreach (var backend in backends)
@@ -91,6 +91,6 @@ public class LoadFactorSelector<TBackend>
             }
         }
 
-        return new ValueTask<BackendState<TBackend>?>(result: selectedBackend);
+        return new ValueTask<Backend<TBackend>?>(result: selectedBackend);
     }
 }

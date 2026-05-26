@@ -20,16 +20,16 @@ public class SelectorTests
     {
         var backends = new[]
         {
-            new BackendState<string>("a", 1, new FixedHealthChecker(true)),
-            new BackendState<string>("b", 1, new FixedHealthChecker(true)),
-            new BackendState<string>("c", 1, new FixedHealthChecker(true)),
+            new Backend<string>("a", 1, new FixedHealthChecker(true)),
+            new Backend<string>("b", 1, new FixedHealthChecker(true)),
+            new Backend<string>("c", 1, new FixedHealthChecker(true)),
         };
         var selector = new RandomSelector<string>();
 
         var result = await selector.Select(backends, CancellationToken.None);
 
         Assert.IsNotNull(result);
-        CollectionAssert.Contains(backends.Select(b => b.Backend).ToArray(), result.Backend);
+        CollectionAssert.Contains(backends.Select(b => b.Value).ToArray(), result.Value);
     }
 
     [TestMethod]
@@ -47,15 +47,15 @@ public class SelectorTests
     {
         var backends = new[]
         {
-            new BackendState<string>("a", 1, new FixedHealthChecker(true)),
-            new BackendState<string>("b", 1, new FixedHealthChecker(true)),
+            new Backend<string>("a", 1, new FixedHealthChecker(true)),
+            new Backend<string>("b", 1, new FixedHealthChecker(true)),
         };
         var selector = new FirstSelector<string>();
 
         var result = await selector.Select(backends, CancellationToken.None);
 
         Assert.IsNotNull(result);
-        Assert.AreEqual("a", result.Backend);
+        Assert.AreEqual("a", result.Value);
     }
 
     [TestMethod]
@@ -71,8 +71,8 @@ public class SelectorTests
     [TestMethod]
     public async Task LoadFactorSelector_SelectsBackendWithLowestLoadFactor()
     {
-        var heavilyLoaded = new BackendState<string>("heavy", 4, new FixedHealthChecker(true));
-        var lightlyLoaded = new BackendState<string>("light", 4, new FixedHealthChecker(true));
+        var heavilyLoaded = new Backend<string>("heavy", 4, new FixedHealthChecker(true));
+        var lightlyLoaded = new Backend<string>("light", 4, new FixedHealthChecker(true));
         using var heavy1 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
         using var heavy2 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
         using var heavy3 = await heavilyLoaded.Acquire(TimeSpan.Zero, CancellationToken.None);
@@ -85,18 +85,18 @@ public class SelectorTests
         Assert.IsNotNull(heavy3);
         Assert.IsNotNull(light1);
         Assert.IsNotNull(result);
-        Assert.AreEqual("light", result.Backend);
+        Assert.AreEqual("light", result.Value);
     }
 
     [TestMethod]
     public async Task LoadFactorSelector_IgnoresBackendsWithoutCapacity()
     {
-        var unavailable = new BackendState<string>("unavailable", 0, new FixedHealthChecker(true));
-        var available = new BackendState<string>("available", 1, new FixedHealthChecker(true));
+        var unavailable = new Backend<string>("unavailable", 0, new FixedHealthChecker(true));
+        var available = new Backend<string>("available", 1, new FixedHealthChecker(true));
         var selector = new LoadFactorSelector<string>();
         var result = await selector.Select([unavailable, available], CancellationToken.None);
 
         Assert.IsNotNull(result);
-        Assert.AreEqual("available", result.Backend);
+        Assert.AreEqual("available", result.Value);
     }
 }

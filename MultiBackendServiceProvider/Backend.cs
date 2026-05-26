@@ -1,8 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿namespace MultiBackendServiceProvider;
 
-namespace MultiBackendServiceProvider;
-
-public sealed class BackendState<TBackend>
+public sealed class Backend<TBackend>
 {
     private readonly SemaphoreSlim _semaphore;
     private readonly IBackendHealthChecker _healthChecker;
@@ -10,7 +8,7 @@ public sealed class BackendState<TBackend>
     /// <summary>
     /// Get the backend object
     /// </summary>
-    public TBackend Backend { get; }
+    public TBackend Value { get; }
 
     /// <summary>
     /// Number of slots available for use
@@ -25,14 +23,14 @@ public sealed class BackendState<TBackend>
     /// <summary>
     /// Create a new backend
     /// </summary>
-    /// <param name="backend"></param>
+    /// <param name="value"></param>
     /// <param name="concurrentAccess"></param>
     /// <param name="healthChecker"></param>
-    public BackendState(TBackend backend, int concurrentAccess, IBackendHealthChecker healthChecker)
+    public Backend(TBackend value, int concurrentAccess, IBackendHealthChecker healthChecker)
     {
         _semaphore = new(concurrentAccess);
 
-        Backend = backend;
+        Value = value;
         _healthChecker = healthChecker;
         TotalSlots = concurrentAccess;
     }
@@ -43,7 +41,7 @@ public sealed class BackendState<TBackend>
     /// <param name="timeout"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    public async Task<IScope?> Acquire(TimeSpan timeout, CancellationToken cancellationToken)
+    internal async Task<IScope?> Acquire(TimeSpan timeout, CancellationToken cancellationToken)
     {
         var acquired = await _semaphore.WaitAsync(timeout, cancellationToken);
         if (!acquired)
@@ -60,9 +58,9 @@ public sealed class BackendState<TBackend>
         _semaphore.Release();
     }
 
-    public Task<bool> CheckHealth(HttpClient http, ILogger logger, CancellationToken cancellation)
+    public Task<bool> CheckHealth(CancellationToken cancellation)
     {
-        return _healthChecker.CheckHealth(http, logger, cancellation).AsTask();
+        return _healthChecker.CheckHealth(cancellation).AsTask();
     }
 
     #region scope
@@ -75,7 +73,7 @@ public sealed class BackendState<TBackend>
         /// <summary>
         /// Get the backend associated with this scope
         /// </summary>
-        public TBackend Backend { get; }
+        public Backend<TBackend> Backend { get; }
     }
 
     /// <summary>
@@ -84,19 +82,19 @@ public sealed class BackendState<TBackend>
     private sealed class Scope
         : IScope
     {
-        private readonly BackendState<TBackend> _backend;
+        private readonly Backend<TBackend> _backend;
         private int _released;
 
         /// <summary>
         /// Get the backend associated with this scope
         /// </summary>
-        public TBackend Backend => _backend.Backend;
+        public Backend<TBackend> Backend => _backend;
 
         /// <summary>
         /// Create a new scope. <b>Must acquire a semaphore slot **before** calling this!</b>
         /// </summary>
         /// <param name="backend"></param>
-        internal Scope(BackendState<TBackend> backend)
+        internal Scope(Backend<TBackend> backend)
         {
             _backend = backend;
             _released = 0;
@@ -121,4 +119,22 @@ public sealed class BackendState<TBackend>
         }
     }
     #endregion
+}
+
+public static class BackendExtensions
+{
+    /// <summary>
+    /// Wait to acquire a slot from a backend. If the backend is null, returns a null scope.
+    /// </summary>
+    /// <param name="backend">The backend</param>
+    /// <param name="timeout">Maximum time to wait for a slot</param>
+    /// <param name="cancellation"></param>
+    /// <returns></returns>
+    public static async Task<Backend<TBackend>.IScope?> Acquire<TBackend>(this Backend<TBackend>? backend, TimeSpan timeout, CancellationToken cancellation)
+    {
+        if (backend is null)
+            return null;
+
+        return await backend.Acquire(timeout, cancellation);
+    }
 }
