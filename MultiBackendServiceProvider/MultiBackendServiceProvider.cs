@@ -29,7 +29,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         _backends = backends.Select(a => new Backend<TBackend>(a.Backend, a.Slots, a.HealthChecker)).ToArray();
     }
 
-    #region GetBackend
+    #region Acquire
     /// <summary>
     /// Get an available backend which is healthy and has slots.
     /// </summary>
