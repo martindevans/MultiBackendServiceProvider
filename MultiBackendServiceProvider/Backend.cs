@@ -22,10 +22,16 @@ public sealed class Backend<TBackend>
     /// </summary>
     public int TotalSlots { get; }
 
+    private bool _enabled = true;
+
     /// <summary>
     /// Indicates if any new slots may be acquired from this backend
     /// </summary>
-    public bool IsEnabled { get; set; } = true;
+    public bool IsEnabled
+    {
+        get => _enabled && !_disposed;
+        set => _enabled = value;
+    }
 
     /// <summary>
     /// Create a new backend
@@ -130,6 +136,7 @@ public sealed class Backend<TBackend>
     }
     #endregion
 
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         // Disposing a second time would block forever since the slots have all been consumed by dispose.

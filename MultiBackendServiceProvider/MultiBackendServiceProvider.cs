@@ -288,7 +288,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// </summary>
     /// <param name="backend"></param>
     /// <returns></returns>
-    public async Task<bool> Remove(Backend<TBackend> backend)
+    public bool Remove(Backend<TBackend> backend)
     {
         if (_backends.Remove(backend))
             return true;
@@ -307,6 +307,7 @@ public sealed class MultiBackendServiceProvider<TBackend>
         throw new NotSupportedException();
     }
 
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (_isDisposed)
