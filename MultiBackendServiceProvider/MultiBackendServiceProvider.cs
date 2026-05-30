@@ -8,12 +8,20 @@ namespace MultiBackendServiceProvider;
 /// duration the backend is in use, so slot limits can be set per backend.
 /// </summary>
 public sealed class MultiBackendServiceProvider<TBackend>
+    : System.Collections.IEnumerable, IAsyncDisposable
 {
     private readonly ILogger _logger;
     private readonly IBackendFilter<TBackend> _filter;
     private readonly IBackendSelector<TBackend> _selector;
-    private readonly IReadOnlyList<Backend<TBackend>> _backends;
 
+    private readonly List<Backend<TBackend>> _backends = [ ];
+    /// <summary>
+    /// Enumerate all backends available in this provider
+    /// </summary>
+    public IEnumerable<Backend<TBackend>> Backends => _backends;
+
+    private bool _isDisposed;
+    
     /// <summary>
     /// Create a new provider
     /// </summary>
@@ -26,7 +34,9 @@ public sealed class MultiBackendServiceProvider<TBackend>
         _logger = logger;
         _filter = filter;
         _selector = selector;
-        _backends = backends.Select(a => new Backend<TBackend>(a.Backend, a.Slots, a.HealthChecker)).ToArray();
+
+        foreach (var item in backends)
+            Add(item);
     }
 
     #region Acquire
@@ -259,4 +269,51 @@ public sealed class MultiBackendServiceProvider<TBackend>
     /// <param name="Latency"></param>
     public record Status(TBackend Backend, int AvailableSlots, int TotalSlots, bool IsHealthy, TimeSpan Latency);
     #endregion
+
+    #region add/remove
+    /// <summary>
+    /// Add a new backend
+    /// </summary>
+    /// <param name="config"></param>
+    /// <returns></returns>
+    public Backend<TBackend> Add(BackendConfig config)
+    {
+        var b = new Backend<TBackend>(config.Backend, config.Slots, config.HealthChecker);
+        _backends.Add(b);
+        return b;
+    }
+
+    /// <summary>
+    /// Remove a backend. Note that the backend may still be in use after it has been returned!
+    /// </summary>
+    /// <param name="backend"></param>
+    /// <returns></returns>
+    public async Task<bool> Remove(Backend<TBackend> backend)
+    {
+        if (_backends.Remove(backend))
+            return true;
+
+        return false;
+    }
+    #endregion
+
+    /// <summary>
+    /// Implemented to allow collection initialiser to work
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="NotSupportedException"></exception>
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+    {
+        throw new NotSupportedException();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+            return;
+        _isDisposed = true;
+
+        foreach (var backend in _backends)
+            await backend.DisposeAsync();
+    }
 }
