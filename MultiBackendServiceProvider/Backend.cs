@@ -1,9 +1,11 @@
 ﻿namespace MultiBackendServiceProvider;
 
 public sealed class Backend<TBackend>
+    : IAsyncDisposable
 {
     private readonly SemaphoreSlim _semaphore;
     private readonly IBackendHealthChecker _healthChecker;
+    private bool _disposed;
 
     /// <summary>
     /// Get the backend object
@@ -19,6 +21,17 @@ public sealed class Backend<TBackend>
     /// Number of slots available for use
     /// </summary>
     public int TotalSlots { get; }
+
+    private bool _enabled = true;
+
+    /// <summary>
+    /// Indicates if any new slots may be acquired from this backend
+    /// </summary>
+    public bool IsEnabled
+    {
+        get => _enabled && !_disposed;
+        set => _enabled = value;
+    }
 
     /// <summary>
     /// Create a new backend
@@ -43,6 +56,9 @@ public sealed class Backend<TBackend>
     /// <returns></returns>
     internal async Task<IScope?> Acquire(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        if (!IsEnabled)
+            return null;
+        
         var acquired = await _semaphore.WaitAsync(timeout, cancellationToken);
         if (!acquired)
             return null;
@@ -119,6 +135,28 @@ public sealed class Backend<TBackend>
         }
     }
     #endregion
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        // Disposing a second time would block forever since the slots have all been consumed by dispose.
+        if (_disposed)
+            return;
+        _disposed = true;
+        
+        // Prevent anyone else taking a slot
+        IsEnabled = false;
+        
+        // Take all slots
+        for (var i = 0; i < TotalSlots; i++)
+            await _semaphore.WaitAsync();
+        
+        // Dispose the backend
+        if (Value is IAsyncDisposable ad)
+            await ad.DisposeAsync();
+        else if (Value is IDisposable d)
+            d.Dispose();
+    }
 }
 
 public static class BackendExtensions
